@@ -209,6 +209,18 @@ class Data:
             self._thresholds = np.array(curves)
 
     def interpolate(self, a):
+        """Interpolate between points
+        
+        Parameters
+        ----------
+        a : array_like
+            Sequence of tuples (index, value)
+            
+        Returns
+        -------
+        output : np.ndarray
+            Interpolated values. Length is equal to length of data sequence
+        """
         output = np.zeros(len(self.current))
         for i in range(1, len(a)):
             end, start = a[i][0],  a[i-1][0]
@@ -220,7 +232,7 @@ class Data:
         return output
 
     # TODO: Test units_are_time = True
-    def baseline(self, polyorder, pts, units_are_time=False):
+    def fit_points(self, polyorder, pts, units_are_time=False):
         """
         Estimated baseline to correct for conductance drift
         
@@ -247,8 +259,7 @@ class Data:
             fit = polyfit(np.arange(len(self.current)))
         return fit
 
-    #TODO: Needs better name
-    def auto_select_baseline(self, npoints):
+    def select_points(self, npoints):
         """
         Pick `npoints` evely spaced points in data for baseline fitting
 
@@ -264,10 +275,21 @@ class Data:
             start = s*len(self.current) // npoints
             end = (s + 1)*len(self.current) // npoints
             seg = self.current[start:end]
-            pts.append((max(seg) + min(seg)) / 2)
+            pts.append(np.median(seg))
             indices.append((end + start) // 2)
         indices, pts = np.array(indices), np.array(pts)
         return indices, pts
+
+    def auto_baseline(self, polyorder, npoints, units_are_time=False):
+        indices, pts = self.select_points(npoints)
+        baseline = self.fit_points(polyorder, zip(indices, pts), 
+                                    units_are_time=units_are_time)
+        return baseline
+
+    def correct_baseline(self, baseline):
+        if len(baseline) != len(self.current):
+            raise ValueError("baseline must be same length as data")
+        return self.current - baseline + np.median(baseline)
 
     def filtered(self):
         """
