@@ -33,16 +33,36 @@ def derivative(signal, order):
         signal = dydx[:]
     return signal
 
-def multi_gaussfit(histogram, p0):
+def fit_histogram(histogram, p0):
     hist, bin_edges = histogram[0], histogram[1]
     x = np.array([(bin_edges[i] + bin_edges[i-1]) / 2 for i in range(1, len(bin_edges))])
-    popt, pcov = optimize.curve_fit(multigauss, x, hist, p0=p0)
+    return gaussfit(x, hist, p0)
+
+def gaussfit(xdata, ydata, p0):
+    # Set Bounds
+    ubounds, lbounds = [], []
+    for i, p in enumerate(p0):
+        ptype = i % 3
+        if ptype == 0:
+            # Amplitude
+            lb = 0
+            ub = max(ydata) * 1.5
+        elif ptype == 1:
+            # Center
+            lb = p - 3*p0[i+1]
+            ub = p + 3*p0[i+1]
+        elif ptype == 2:
+            # Width
+            lb = 0
+            ub = 3 * p
+        ubounds.append(ub)
+        lbounds.append(lb)
+    popt, pcov = optimize.curve_fit(multigauss, xdata, ydata, p0=p0, bounds=(lbounds, ubounds))
     return popt
 
-def plot_fit(histogram, popt):
+def plot_fit(popt, xlim):
     ax = plt.gca()
-    hist, bin_edges = histogram[0], histogram[1]
-    x = np.array([(bin_edges[i] + bin_edges[i-1]) / 2 for i in range(1, len(bin_edges))])
+    x = np.linspace(*xlim)
     for i in range(len(popt) // 3):
         amp = popt[3*i]
         mu = popt[3*i + 1]
@@ -50,6 +70,7 @@ def plot_fit(histogram, popt):
         lb="%.2G $\\times$ N(%.2G, %.2G)" % (amp, mu, sigma)
         ax.plot(x, gauss(x, amp, mu, sigma), '--', label=lb)
     ax.plot(x, multigauss(x, *popt), label='fit')
+    ax.legend()
 
 if __name__ == '__main__':
     pass
