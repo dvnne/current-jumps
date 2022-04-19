@@ -55,6 +55,7 @@ def biased_mean(window, threshold = 0.1):
             win_right = win_right[:-1]
     return np.mean(np.concatenate((win_left, [center_val], win_right)))
 
+#TODO: Fix this method (use binary operations on the pd.Series elements)
 def select_data(indexfile, 
                 devicename = None, 
                 field = None,
@@ -250,6 +251,8 @@ class Data:
         fit : np.ndarray
             1D array of values fitted to `pts`
         """
+        if polyorder == 0:
+            return self.interpolate(pts)
         x, y = tuple(zip(*pts))
         x, y = np.array(x), np.array(y)
         polyfit = np.poly1d(np.polyfit(x, y, polyorder))
@@ -261,7 +264,7 @@ class Data:
 
     def select_points(self, npoints):
         """
-        Pick `npoints` evely spaced points in data for baseline fitting
+        Pick `npoints` evenly spaced points in data for baseline fitting
 
         Returns
         -------
@@ -282,7 +285,7 @@ class Data:
 
     def auto_baseline(self, polyorder, npoints, units_are_time=False):
         indices, pts = self.select_points(npoints)
-        baseline = self.fit_points(polyorder, zip(indices, pts), 
+        baseline = self.fit_points(polyorder, list(zip(indices, pts)), 
                                     units_are_time=units_are_time)
         return baseline
 
@@ -519,10 +522,12 @@ class Data:
         for state, data in ld_dict.items():
             ax.boxplot(data.lifetimes, positions = [state])
         
-    def view_data(self):
+    def view_data(self, show_now=True):
         fig, axs = plt.subplots(1, 2)
         axs[0].plot(self.current, '.')
         axs[1].hist(self.current, bins='auto')
+        if show_now:
+            plt.show()
 
 
 class SimulatedData(Data):
