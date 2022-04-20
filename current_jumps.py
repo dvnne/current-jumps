@@ -136,7 +136,7 @@ class Data:
     """
 
     def __init__(self, current, time = None, 
-                kernel_window_length = 11, kernel_function = np.mean,
+                kernel_window_length = 11,
                 min_jump_size = 1):
         """
         Parameters
@@ -161,7 +161,7 @@ class Data:
             self.time = np.array(time) - time[0]
         # Kernel Parameters # -- These should probably be properties
         self.kernel_window_length = kernel_window_length
-        self.kernel_function = kernel_function
+        self.set_kernel_function(np.mean)
         self.min_jump_size = min_jump_size
         self._thresholds = np.array([[]])
 
@@ -208,6 +208,27 @@ class Data:
                     indices = [(len(self.current) * (i+1)) // (len(elem) + 1) for i in range(len(elem))]
                     curves.append(self.interpolate(list(zip(indices, elem))))
             self._thresholds = np.array(curves)
+
+    @property
+    def kernel_function(self):
+        return self._kernel_function
+
+    def set_kernel_function(self, fn, include_lims=False):
+        if include_lims:
+            lims = min(self.current), max(self.current)
+            self._kernel_function = lambda window : fn(window, lims)
+        else:
+            self._kernel_function = lambda window : fn(window)
+
+    @property
+    def kernel_window_length(self):
+        return self._kernel_window_length
+
+    @kernel_window_length.setter
+    def kernel_window_length(self, n):
+        if n % 2 != 1 or n < 1:
+            raise ValueError("kernel_window_length must be a positive, odd integer")
+        self._kernel_window_length = n
 
     def interpolate(self, a):
         """Interpolate between points
@@ -625,3 +646,5 @@ class StateData:
 if __name__ == '__main__':
     indexfile = r"C:\Users\dvnne\OneDrive - Georgetown University\RESEARCH\Current Jumps\DATA\data_summary.txt"
     xlsxdir = r"C:\Users\dvnne\OneDrive - Georgetown University\RESEARCH\Current Jumps\DATA\Excel"
+    d = Data()
+    d.kernel_function = include_range(biased_mean) # d.kernel_function = lambda w : biased_mean(w, d.range)
