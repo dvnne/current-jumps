@@ -28,19 +28,24 @@ def parse_excel_data(d):
     return dfout
 
 # Kernel Function #
-def biased_mean(window, threshold = 0.1):
+def biased_mean(window, lims, threshold=0.1, mode="full"):
     """
     Take the mean of array of values in `window` with a bias to the center
     value. Throw out values from left or right side of window until relative
     difference between center value and the mean of the left or right sides
     of the window are within `threshold` 
     """
-    center_index = len(window)//2
+    center_index = len(window) // 2
     center_val = window[center_index]
     win_left, win_right = window[:center_index], window[center_index + 1:]
+    if mode not in {"window", "full"}:
+        raise ValueError("invalid mode: %s Use 'window' or 'full'" % mode)
+    if mode == "window":
+        win_range = max(window) - min(window)
+    if mode == "full":
+        win_range = max(lims) - min(lims)
     while len(win_left) > 0 and len(win_right) > 0:
         window = np.concatenate((win_left, [center_val], win_right))
-        win_range = max(window) - min(window) # consider not recomputing this
         mean_left, mean_right = np.mean(win_left), np.mean(win_right)
         diff_left, diff_right = abs(mean_left - center_val), abs(mean_right - center_val)
         if win_range == 0:
@@ -135,7 +140,8 @@ class Data:
     thresholds
     """
 
-    def __init__(self, current, time = None, 
+    def __init__(self, current, time = None,
+                kernel_function = np.mean, 
                 kernel_window_length = 11,
                 min_jump_size = 1):
         """
@@ -161,7 +167,7 @@ class Data:
             self.time = np.array(time) - time[0]
         # Kernel Parameters # -- These should probably be properties
         self.kernel_window_length = kernel_window_length
-        self.set_kernel_function(np.mean)
+        self.set_kernel_function(kernel_function)
         self.min_jump_size = min_jump_size
         self._thresholds = np.array([[]])
 
@@ -213,12 +219,28 @@ class Data:
     def kernel_function(self):
         return self._kernel_function
 
-    def set_kernel_function(self, fn, include_lims=False):
-        if include_lims:
-            lims = min(self.current), max(self.current)
-            self._kernel_function = lambda window : fn(window, lims)
-        else:
-            self._kernel_function = lambda window : fn(window)
+    def set_kernel_function(self, fn, **kwargs):
+        """
+        Set given function as kernel for filtering
+
+        Parameters
+        ----------
+        fn : function
+            Function of one or two variables: f(window [, lims] [, **kwargs]).
+            Accepts array_like window and returns one value. Tuple of
+            `min(self.current), max(self.current)` will be passed to lims
+        **kwargs : dict
+            Options to pass to `fn`
+        """
+        lims = min(self.current), max(self.current)
+        test_window = np.ones(5)
+        try:
+            fn(test_window, **kwargs)
+            self._kernel_function = lambda w : fn(w, **kwargs)
+        except TypeError:
+            fn(test_window, lims, **kwargs)
+            self._kernel_function = lambda w : fn(w, lims, **kwargs)
+
 
     @property
     def kernel_window_length(self):
@@ -646,5 +668,3 @@ class StateData:
 if __name__ == '__main__':
     indexfile = r"C:\Users\dvnne\OneDrive - Georgetown University\RESEARCH\Current Jumps\DATA\data_summary.txt"
     xlsxdir = r"C:\Users\dvnne\OneDrive - Georgetown University\RESEARCH\Current Jumps\DATA\Excel"
-    d = Data()
-    d.kernel_function = include_range(biased_mean) # d.kernel_function = lambda w : biased_mean(w, d.range)
