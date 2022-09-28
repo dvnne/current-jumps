@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # UTILITY FUNCTIONS #
 #####################
 
-def parse_excel_data(d):
+def parse_excel_data(d, voltage_col=3, field_col=6, temp_col=5):
     """
     Return DataFrame of summary data from current vs time experiments
 
@@ -15,6 +15,9 @@ def parse_excel_data(d):
     ----------
     d : string, bytes
         Directory of excel (*.xlsx) files with current jumps data
+    voltage_col, field_col, temp_col : int, optional
+        Columns (0-indexed) where voltage, field, and temperature data can be
+        found
     """
     wkbs = [f for f in os.listdir(d) if f.endswith(".xlsx")]
     output = []
@@ -22,7 +25,7 @@ def parse_excel_data(d):
         dfs = pd.read_excel(os.path.join(d, wkb), header=None, sheet_name=None)
         for sheetname, df in dfs.items():
             avgs = df.mean()
-            voltage, field, temp = 1000 * avgs[3], avgs[6], avgs[5]
+            voltage, field, temp = 1000 * avgs[voltage_col], avgs[field_col], avgs[temp_col]
             output.append([wkb, sheetname, field, voltage, temp])
     dfout = pd.DataFrame(output, columns=["FileName", "SheetName", "Field (T)", "Voltage (mV)", "Temp (K)"])
     return dfout
@@ -664,7 +667,3 @@ class StateData:
 
     def std_rate(self):
         return np.std(self.rates())
-
-if __name__ == '__main__':
-    indexfile = r"C:\Users\dvnne\OneDrive - Georgetown University\RESEARCH\Current Jumps\DATA\data_summary.txt"
-    xlsxdir = r"C:\Users\dvnne\OneDrive - Georgetown University\RESEARCH\Current Jumps\DATA\Excel"
