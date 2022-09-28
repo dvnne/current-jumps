@@ -30,6 +30,29 @@ def parse_excel_data(d, voltage_col=3, field_col=6, temp_col=5):
     dfout = pd.DataFrame(output, columns=["FileName", "SheetName", "Field (T)", "Voltage (mV)", "Temp (K)"])
     return dfout
 
+def append_sort_fields(df):
+    """
+    Add columns `DeviceName`, `sort_field`, `sort_v`, and `sort_temp` to
+    summary dataframe
+
+    Parameters
+    ----------
+    df : pandas.dataFrame
+        Output from `parse_excel_data`
+    """
+    fields = df.SheetName.apply(lambda s : s.split('_'))
+    name = fields.apply(lambda a : a[0])
+    field = fields.apply(lambda a : int(a[1][:-1]))
+    voltage = fields.apply(lambda a : int(a[2][:-2]))
+    temp = fields.apply(lambda a : int(a[3][:-1]))
+    fields = pd.DataFrame({"DeviceName": name, "sort_field": field, "sort_v": voltage, "sort_temp": temp})
+    # insert sort_temp columm
+    df.insert(0, fields.sort_temp.name, fields.sort_temp)
+    df.insert(0, fields.sort_v.name, fields.sort_v)
+    df.insert(0, fields.sort_field.name, fields.sort_field)
+    df.insert(0, fields.DeviceName.name, fields.DeviceName)
+    return df
+
 # Kernel Function #
 def biased_mean(window, lims, threshold=0.1, mode="full"):
     """
