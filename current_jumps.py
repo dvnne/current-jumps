@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from copy import copy
 
 #####################
 # UTILITY FUNCTIONS #
@@ -14,12 +15,16 @@ def parse_excel_data(d, voltage_col=3, field_col=6, temp_col=5):
     Parameters
     ----------
     d : string, bytes
-        Directory of excel (*.xlsx) files with current jumps data
+        Single Excel file or directory of excel (*.xlsx) files with current jumps data
     voltage_col, field_col, temp_col : int, optional
         Columns (0-indexed) where voltage, field, and temperature data can be
         found
     """
-    wkbs = [f for f in os.listdir(d) if f.endswith(".xlsx")]
+    if os.path.isdir(d):
+        wkbs = [f for f in os.listdir(d) if f.endswith(".xlsx")]
+    elif d.endswith(".xlsx"):
+        wkbs = [os.path.basename(d)]
+        d = os.path.dirname(d)
     output = []
     for wkb in wkbs:
         dfs = pd.read_excel(os.path.join(d, wkb), header=None, sheet_name=None)
@@ -52,6 +57,73 @@ def append_sort_fields(df):
     df.insert(0, fields.sort_field.name, fields.sort_field)
     df.insert(0, fields.DeviceName.name, fields.DeviceName)
     return df
+
+def plot_excel(xlsx_path, **kwargs):
+    """
+    Wrapper function for summary_plot for plotting all sheets in an excel
+    file
+    
+    Parameters
+    ----------
+    xlsx_path: str
+    **kwargs: dict
+    """
+    summary = append_sort_fields(parse_excel_data(xlsx_path))
+    xlsxdir = os.path.dirname(xlsx_path)
+    return summary_plot(summary, xlsxdir, **kwargs)
+
+
+
+def summary_plot(summary, xlsxdir, filter=None, plot_type="hist", sort_by="temp", **kwargs):
+    """
+    Create stacked plot of data from a summary DataFrame
+    
+    Parameters
+    ----------
+    summary : str
+        Path to a (tab-deliminated) summary file
+    xlsxdir : str
+        Directory where files can be found
+    filter : pandas.Series, optional
+        Series of bools to filter summary data for plotting
+    plot_type : {"hist", "scatter"}, default "hist"
+        Type of plot
+    sort_by : {"temp", "voltage"}, default "temp"
+        Whether to sort by temperature or bias voltage
+    **kwargs : dict
+        Options for `Data.from_excel`
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axs : list
+        matplotlib.axes.Axes objects
+    """
+    if filter:
+        filtered = summary.loc[filter].copy()
+    else:
+        filtered = summary.copy()
+    # sort
+    if sort_by == "temp":
+        sort_by = "sort_temp"
+    elif sort_by == "voltage":
+        sort_by = "sort_v"
+    else:
+        raise ValueError("Invalid entry for `sort_by`: {}".format(sort_by))
+    filtered.sort_values(sort_by, ascending=False, inplace=True)
+    # now plot
+    fig, axs = plt.subplots(len(filtered), 1, sharex=True)
+    if not hasattr(axs, '__iter__'):
+        axs = [axs]
+    sheets, files = filtered.SheetName, filtered.FileName
+    for ax, sheet, filename in zip(axs, sheets, files):
+        data = Data.from_excel(os.path.join(xlsxdir, filename), sheet_name=sheet, **kwargs)
+        if plot_type == "scatter":
+            ax.plot(data.time, data.current, '.', label=sheet)
+        elif plot_type == "hist":
+            ax.hist(data.current, bins="auto", label=sheet)
+    return fig, axs
+
 
 # Kernel Function #
 def biased_mean(window, lims, threshold=0.1, mode="full"):
@@ -279,7 +351,8 @@ class Data:
         self._kernel_window_length = n
 
     def interpolate(self, a):
-        """Interpolate between points
+        """
+        Interpolate between points
         
         Parameters
         ----------
@@ -510,20 +583,21 @@ class Data:
                     lifetimes.append(interval * dt)
         return lifetimes
 
-    @classmethod
-    def from_excel(cls, filename, sheet_name = 0, use_conductance = False, **kwargs):
-        df = pd.read_excel(filename, sheet_name=sheet_name, header=0)
-        time, current, vsd = df.iloc[:, 0], df.iloc[:, 4], df.iloc[:, 3]
-        time, current, vsd = time.to_numpy(), current.to_numpy(), vsd.to_numpy()
-        if use_conductance:
-            conductance = current / vsd
-            return cls(conductance, time = time, **kwargs)
-        else:
-            return cls(current, time=time, **kwargs)
+    def slice(self, start, stop):
+        cpy = copy(self)
+        cpy.current = self.current[start:stop]
+        if self.time is not None:
+            cpy.time = self.time[start:stop]
+        return cpy
 
     @classmethod
-    def from_dataframe(cls, df, use_conductance = False, **kwargs):
-        time, current, vsd = df.iloc[:, 0], df.iloc[:, 4], df.iloc[:, 3]
+    def from_excel(cls, filename, sheet_name = 0, **kwargs):
+        df = pd.read_excel(filename, sheet_name=sheet_name, header=0)
+        return cls.from_dataframe(df, **kwargs)
+
+    @classmethod
+    def from_dataframe(cls, df, use_conductance=False, time_col=0, current_col=4, vsd_col=3, **kwargs):
+        time, current, vsd = df.iloc[:, time_col], df.iloc[:, current_col], df.iloc[:, vsd_col]
         time, current, vsd = time.to_numpy(), current.to_numpy(), vsd.to_numpy()
         if use_conductance:
             conductance = current / vsd
@@ -570,7 +644,7 @@ class Data:
         ax = plt.gca()
         return ax.hist(self.filtered(), **kwargs)
 
-    def plot_labeled_data(self, plot_filtered = True):
+    def plot_labeled_data(self, plot_filtered=True):
         ax = plt.gca()
         for label, data in self.labeled_data().items():
             ax.plot(data[0], data[1], '.', label = label)
