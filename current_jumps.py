@@ -99,6 +99,7 @@ def summary_plot(summary, xlsxdir, filter=None, plot_type="hist", sort_by="temp"
     axs : list
         matplotlib.axes.Axes objects
     """
+    # filter
     if filter:
         filtered = summary.loc[filter].copy()
     else:
@@ -111,7 +112,7 @@ def summary_plot(summary, xlsxdir, filter=None, plot_type="hist", sort_by="temp"
     else:
         raise ValueError("Invalid entry for `sort_by`: {}".format(sort_by))
     filtered.sort_values(sort_by, ascending=False, inplace=True)
-    # now plot
+    # plot
     fig, axs = plt.subplots(len(filtered), 1, sharex=True)
     if not hasattr(axs, '__iter__'):
         axs = [axs]
@@ -241,7 +242,9 @@ class Data:
     def __init__(self, current, time = None,
                 kernel_function = np.mean, 
                 kernel_window_length = 11,
-                min_jump_size = 1):
+                min_jump_size = 1,
+                voltage=None,
+                temp=None):
         """
         Parameters
         ----------
@@ -257,6 +260,10 @@ class Data:
             variable that takes an array and returns a single value
         min_jump_size : int, default: 1
             Minimum length of peaks (in index units) allowed by filtering
+        voltage : np.ndarray
+            Voltage data
+        temp : np.ndarray
+            Temperature data
         """
         self.current = np.array(current)
         if time is None:
@@ -268,6 +275,8 @@ class Data:
         self.set_kernel_function(kernel_function)
         self.min_jump_size = min_jump_size
         self._thresholds = np.array([[]])
+        self.voltage = voltage
+        self.temp = temp
 
     @property
     def thresholds(self):
@@ -426,15 +435,56 @@ class Data:
         return indices, pts
 
     def auto_baseline(self, polyorder, npoints, units_are_time=False):
+        """
+        Automaticaly create polynomial baseline with evenly spaced sample points
+        
+        Parameters
+        ----------
+        polyorder : int
+            Order of polynomial fit
+        npoints : int
+            Number of points for sampling
+            
+        Returns
+        -------
+        baseline : np.ndarray
+            Estimated baseline fit to data
+        """
         indices, pts = self.select_points(npoints)
         baseline = self.fit_points(polyorder, list(zip(indices, pts)), 
                                     units_are_time=units_are_time)
         return baseline
 
     def correct_baseline(self, baseline):
+        """
+        Correct for overall drift according to array `baseline`
+        
+        Returns
+        -------
+        new_current : np.ndarray
+        """
         if len(baseline) != len(self.current):
             raise ValueError("baseline must be same length as data")
-        return self.current - baseline + np.median(baseline)
+        new_current = self.current - baseline + np.median(baseline)
+        return new_current
+
+    def export_corrected(self, baseline):
+        """
+        Create new Data object with baseline corrected
+        
+        Parameters
+        ----------
+        baseline : np.ndarray
+        
+        Returns
+        -------
+        data : current_jumps.Data
+        """
+        new_current = self.correct_baseline(baseline)
+        data = copy(self)
+        del data.thresholds
+        data.current = new_current
+        return data
 
     def filtered(self):
         """
@@ -588,22 +638,33 @@ class Data:
         cpy.current = self.current[start:stop]
         if self.time is not None:
             cpy.time = self.time[start:stop]
+        if self.thresholds.size > 0:
+            cpy._thresholds = self.thresholds[:, start:stop]
+        if self.voltage is not None:
+            cpy.voltage = self.voltage[start:stop]
+        if self.temp is not None:
+            cpy.temp = self.temp[start:stop]
         return cpy
 
     @classmethod
-    def from_excel(cls, filename, sheet_name = 0, **kwargs):
+    def from_excel(cls, filename, sheet_name=0, **kwargs):
         df = pd.read_excel(filename, sheet_name=sheet_name, header=0)
         return cls.from_dataframe(df, **kwargs)
 
     @classmethod
-    def from_dataframe(cls, df, use_conductance=False, time_col=0, current_col=4, vsd_col=3, **kwargs):
-        time, current, vsd = df.iloc[:, time_col], df.iloc[:, current_col], df.iloc[:, vsd_col]
-        time, current, vsd = time.to_numpy(), current.to_numpy(), vsd.to_numpy()
+    def from_dataframe(cls, df, use_conductance=False, 
+                        time_col=0, current_col=4, vsd_col=3,
+                        voltage_col=3, temp_col=5, **kwargs):
+        (time, current, vsd, voltage, temp) = (df.iloc[:, time_col].to_numpy(), 
+                                                df.iloc[:, current_col].to_numpy(), 
+                                                df.iloc[:, vsd_col].to_numpy(),
+                                                df.iloc[:, voltage_col].to_numpy(),
+                                                df.iloc[:, temp_col].to_numpy())
         if use_conductance:
             conductance = current / vsd
-            return cls(conductance, time = time, **kwargs)
+            return cls(conductance, time=time, voltage=voltage, temp=temp, **kwargs)
         else:
-            return cls(current, time=time, **kwargs)
+            return cls(current, time=time, voltage=voltage, temp=temp, **kwargs)
 
     @classmethod
     def from_index(cls, index_df, row_i, xlsxdir, **kwargs):
@@ -629,12 +690,15 @@ class Data:
         else:
             ax.plot(self.time, self.filtered(), **kwargs)
 
-    def plot_data(self, **kwargs):
+    def plot_data(self, use_index_for_time=False, **kwargs):
         ax = plt.gca()
-        if self.time is not None:
-            ax.plot(self.time, self.current, '.', **kwargs)
+        if use_index_for_time:
+            time = np.arange(len(self.current))
+        elif self.time is not None:
+            time = self.time
         else:
-            ax.plot(self.current, '.', **kwargs)
+            time = np.arange(len(self.current))
+        ax.plot(time, self.current, '.', **kwargs)
         
     def histogram(self, **kwargs):
         ax = plt.gca()
@@ -671,6 +735,19 @@ class Data:
         axs[1].hist(self.current, bins='auto')
         if show_now:
             plt.show()
+
+    def plot_baseline(self, baseline):
+        fig, axs = plt.subplots(2, 1, sharex=True)
+        if self.time is None:
+            time = np.arange(len(self.current))
+        else:
+            time = self.time
+        # Bottom: Raw Data with Baseline
+        axs[1].plot(time, self.current, '.')
+        axs[1].plot(time, baseline, '-', lw=3)
+        # Top: Preview of Correction
+        corrected = self.correct_baseline(baseline)
+        axs[0].plot(time, corrected, '.', c='tab:green')
 
 
 class SimulatedData(Data):
