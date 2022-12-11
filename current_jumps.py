@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from copy import copy
+from bisect import bisect_left
+from warnings import warn
 
 #####################
 # UTILITY FUNCTIONS #
@@ -278,6 +280,9 @@ class Data:
         self.voltage = voltage
         self.temp = temp
 
+    def __len__(self):
+        return len(self.current)
+
     @property
     def thresholds(self):
         return self._thresholds
@@ -359,6 +364,15 @@ class Data:
             raise ValueError("kernel_window_length must be a positive, odd integer")
         self._kernel_window_length = n
 
+    def time_to_index(self, t):
+        '''Convert time to nearest index in time data'''
+        i = bisect_left(self.time, t)
+        if i == len(self.time):
+            msg = ("Caclulated index is equal to length of dataset." 
+                    "You may be extrapolating")
+            warn(msg)
+        return i
+
     def interpolate(self, a):
         """
         Interpolate between points
@@ -432,9 +446,10 @@ class Data:
             pts.append(np.median(seg))
             indices.append((end + start) // 2)
         indices, pts = np.array(indices), np.array(pts)
-        return indices, pts
+        points = list(zip(indices, pts))
+        return points
 
-    def auto_baseline(self, polyorder, npoints, units_are_time=False):
+    def auto_baseline(self, polyorder, npoints):
         """
         Automaticaly create polynomial baseline with evenly spaced sample points
         
@@ -450,9 +465,9 @@ class Data:
         baseline : np.ndarray
             Estimated baseline fit to data
         """
-        indices, pts = self.select_points(npoints)
-        baseline = self.fit_points(polyorder, list(zip(indices, pts)), 
-                                    units_are_time=units_are_time)
+        pts = self.select_points(npoints)
+        baseline = self.fit_points(polyorder, pts, 
+                                    units_are_time=False)
         return baseline
 
     def correct_baseline(self, baseline):
@@ -633,7 +648,20 @@ class Data:
                     lifetimes.append(interval * dt)
         return lifetimes
 
-    def slice(self, start, stop):
+    def slice(self, start, stop, units_are_time=False):
+        '''
+        Returns new object where data fields are truncated between
+        [start, stop)
+
+        Parameters
+        ----------
+        start, stop : int
+            Bounds for new dataset
+        units_are_time : bool, default: False
+            Whether start, stop given in index or time units
+        '''
+        if units_are_time:
+            start, stop = self.time_to_index(start), self.time_to_index(stop)
         cpy = copy(self)
         cpy.current = self.current[start:stop]
         if self.time is not None:
@@ -749,6 +777,19 @@ class Data:
         corrected = self.correct_baseline(baseline)
         axs[0].plot(time, corrected, '.', c='tab:green')
 
+    def plot_points(self, pts, use_index_for_time=False,
+                    line_style= '', marker_size=10, marker_style='.'):
+        ax = plt.gca()
+        indices, values = tuple(zip(*pts))
+        if self.time is None:
+            time = indices
+        elif use_index_for_time:
+            time = indices
+        else:
+            time = [self.time[i] for i in indices]
+        self.plot_data(use_index_for_time)
+        ax.plot(time, values, 
+                marker=marker_style, ms=marker_size, ls=line_style)
 
 class SimulatedData(Data):
     def __init__(self, *states, N = 1000):
