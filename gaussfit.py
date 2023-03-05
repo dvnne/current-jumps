@@ -67,7 +67,7 @@ def plot_fit(popt, xlim):
         amp = popt[3*i]
         mu = popt[3*i + 1]
         sigma = popt[3*i + 2]
-        lb="%.2G $\\times$ N(%.2G, %.2G)" % (amp, mu, sigma)
+        lb="%.3G $\\times$ N(%.3G, %.3G)" % (amp, mu, sigma)
         ax.plot(x, gauss(x, amp, mu, sigma), '--', label=lb)
     ax.plot(x, multigauss(x, *popt), label='fit')
     ax.legend()

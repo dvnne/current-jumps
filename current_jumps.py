@@ -37,21 +37,27 @@ def parse_excel_data(d, voltage_col=3, field_col=6, temp_col=5):
     dfout = pd.DataFrame(output, columns=["FileName", "SheetName", "Field (T)", "Voltage (mV)", "Temp (K)"])
     return dfout
 
-def append_sort_fields(df):
+def append_sort_fields(df, name=0, field=1, voltage=2, temp=3):
     """
     Add columns `DeviceName`, `sort_field`, `sort_v`, and `sort_temp` to
     summary dataframe
+
+    Separates sheet names into fields separated by underscores, i.e.
+    name_field_voltage_temp. The index of the field can be specified with
+    optional parameters
 
     Parameters
     ----------
     df : pandas.dataFrame
         Output from `parse_excel_data`
+    name, field, voltage, temp : int, optional
+        Indices for the fields
     """
     fields = df.SheetName.apply(lambda s : s.split('_'))
-    name = fields.apply(lambda a : a[0])
-    field = fields.apply(lambda a : int(a[1][:-1]))
-    voltage = fields.apply(lambda a : int(a[2][:-2]))
-    temp = fields.apply(lambda a : int(a[3][:-1]))
+    name = fields.apply(lambda a : a[name])
+    field = fields.apply(lambda a : int(a[field][:-1]))
+    voltage = fields.apply(lambda a : int(a[voltage][:-2]))
+    temp = fields.apply(lambda a : int(a[temp][:-1]))
     fields = pd.DataFrame({"DeviceName": name, "sort_field": field, "sort_v": voltage, "sort_temp": temp})
     # insert sort_temp columm
     df.insert(0, fields.sort_temp.name, fields.sort_temp)
@@ -67,14 +73,12 @@ def plot_excel(xlsx_path, **kwargs):
     
     Parameters
     ----------
-    xlsx_path: str
-    **kwargs: dict
+    xlsx_path : str
+    **kwargs : dict
     """
     summary = append_sort_fields(parse_excel_data(xlsx_path))
     xlsxdir = os.path.dirname(xlsx_path)
     return summary_plot(summary, xlsxdir, **kwargs)
-
-
 
 def summary_plot(summary, xlsxdir, filter=None, plot_type="hist", sort_by="temp", **kwargs):
     """
@@ -82,8 +86,9 @@ def summary_plot(summary, xlsxdir, filter=None, plot_type="hist", sort_by="temp"
     
     Parameters
     ----------
-    summary : str
-        Path to a (tab-deliminated) summary file
+    summary : pandas.DataFrame
+        Table of summarized data. Must contain at least one `FileName` and one
+        `SheetName` column
     xlsxdir : str
         Directory where files can be found
     filter : pandas.Series, optional
@@ -126,7 +131,6 @@ def summary_plot(summary, xlsxdir, filter=None, plot_type="hist", sort_by="temp"
         elif plot_type == "hist":
             ax.hist(data.current, bins="auto", label=sheet)
     return fig, axs
-
 
 # Kernel Function #
 def biased_mean(window, lims, threshold=0.1, mode="full"):
@@ -683,16 +687,18 @@ class Data:
     def from_dataframe(cls, df, use_conductance=False, 
                         time_col=0, current_col=4, vsd_col=3,
                         voltage_col=3, temp_col=5, **kwargs):
-        (time, current, vsd, voltage, temp) = (df.iloc[:, time_col].to_numpy(), 
-                                                df.iloc[:, current_col].to_numpy(), 
-                                                df.iloc[:, vsd_col].to_numpy(),
-                                                df.iloc[:, voltage_col].to_numpy(),
-                                                df.iloc[:, temp_col].to_numpy())
+        (time, current, vsd, voltage, temp) = (df.iloc[:, time_col].to_numpy(),
+                                            df.iloc[:, current_col].to_numpy(),
+                                            df.iloc[:, vsd_col].to_numpy(),
+                                            df.iloc[:, voltage_col].to_numpy(),
+                                            df.iloc[:, temp_col].to_numpy())
         if use_conductance:
             conductance = current / vsd
-            return cls(conductance, time=time, voltage=voltage, temp=temp, **kwargs)
+            return cls(conductance, time=time, 
+                        voltage=voltage, temp=temp, **kwargs)
         else:
-            return cls(current, time=time, voltage=voltage, temp=temp, **kwargs)
+            return cls(current, time=time, 
+                        voltage=voltage, temp=temp, **kwargs)
 
     @classmethod
     def from_index(cls, index_df, row_i, xlsxdir, **kwargs):
@@ -859,7 +865,7 @@ class StateData:
         lines = []
         for p, val in zip(params, values):
             pad = ' ' * (max_param_length - len(p))
-            lines.append(pad + p + ':' + '{0:11.3g}'.format(val))
+            lines.append(pad + p + ':' + '{0:11.4g}'.format(val))
         return '\n'.join(lines)
 
     def avg_value(self):
