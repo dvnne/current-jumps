@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Garbage I create
+examples/
+
+# Garbage Apple Creates
+.DS_Store
+
 # C extensions
 *.so
 
